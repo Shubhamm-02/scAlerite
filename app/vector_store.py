@@ -1,83 +1,54 @@
 """
-vector_store.py – Semantic Search Engine for scAlerite
-======================================================
+vector_store.py – Lightweight TF-IDF based semantic search
+============================================================
 
-🧠 HOW FAISS WORKS:
-───────────────────
-FAISS (Facebook AI Similarity Search) finds vectors that are
-mathematically closest to a query vector. We use IndexFlatL2
-(Euclidean distance). Lower score = better match.
+Replaces FAISS + sentence-transformers (400MB RAM) with scikit-learn
+TF-IDF (30MB RAM) — fits comfortably inside Render's 512MB free tier.
 """
 
-import os
-os.environ["OMP_NUM_THREADS"] = "1"  # macOS threading fix
-
-import faiss
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from app.embedding import get_embeddings, embed_query
 
 
 class VectorStore:
-    """In-memory vector store using FAISS with source tracking."""
-
-    def __init__(self, dimension: int = 384):
-        self.index = faiss.IndexFlatL2(dimension)
-        self.chunks = []    # text content
-        self.sources = []   # source PDF filename for each chunk
+    def __init__(self):
+        self.chunks = []        # list of {"text": ..., "source": ...}
+        self.vectorizer = TfidfVectorizer(
+            stop_words="english",
+            max_features=10000,
+            ngram_range=(1, 2),   # unigrams + bigrams for better coverage
+        )
+        self._matrix = None     # TF-IDF matrix (n_docs x n_features)
 
     def add_chunks(self, chunk_dicts: list[dict]):
         """
-        Add chunks with metadata to the index.
-
-        Args:
-            chunk_dicts: List of dicts with 'text' and 'source' keys.
+        Build a TF-IDF matrix from all chunks.
+        chunk_dicts: [{"text": ..., "source": ...}, ...]
         """
-        if not chunk_dicts:
-            return
-
+        self.chunks = chunk_dicts
         texts = [c["text"] for c in chunk_dicts]
-        sources = [c["source"] for c in chunk_dicts]
-
-        print(f"🧠 Generating embeddings for {len(texts)} chunks...")
-        embeddings = get_embeddings(texts).astype('float32')
-
-        self.index.add(embeddings)
-        self.chunks.extend(texts)
-        self.sources.extend(sources)
-        print(f"✅ Added {len(texts)} chunks to FAISS index.")
+        self._matrix = self.vectorizer.fit_transform(texts)
+        print(f"✅ TF-IDF index built: {self._matrix.shape[0]} docs, {self._matrix.shape[1]} features")
 
     def search(self, query: str, top_k: int = 3) -> list[dict]:
         """
-        Search for the most relevant chunks.
-
-        Returns:
-            List of dicts with 'chunk', 'source', and 'score'.
+        Find top-k most relevant chunks for a query.
+        Returns: [{"chunk": text, "source": filename, "score": float}, ...]
         """
-        if self.index.ntotal == 0:
+        if self._matrix is None or len(self.chunks) == 0:
             return []
 
-        query_vec = embed_query(query).astype('float32').reshape(1, -1)
-        distances, indices = self.index.search(query_vec, top_k)
+        query_vec = self.vectorizer.transform([query])
+        scores = cosine_similarity(query_vec, self._matrix)[0]
 
+        top_indices = np.argsort(scores)[::-1][:top_k]
         results = []
-        for dist, idx in zip(distances[0], indices[0]):
-            if idx != -1:
+        for idx in top_indices:
+            if scores[idx] > 0:   # only return relevant results
                 results.append({
-                    "chunk": self.chunks[idx],
-                    "source": self.sources[idx],
-                    "score": float(dist),
+                    "chunk": self.chunks[idx]["text"],
+                    "source": self.chunks[idx]["source"],
+                    "score": float(scores[idx]),
                 })
-
         return results
-
-
-if __name__ == "__main__":
-    store = VectorStore()
-    store.add_chunks([
-        {"text": "The academic calendar starts in August 2025.", "source": "Calendar.pdf"},
-        {"text": "Students must book meeting rooms 24 hours in advance.", "source": "SOP.pdf"},
-    ])
-
-    matches = store.search("When do classes begin?", top_k=2)
-    for i, m in enumerate(matches, 1):
-        print(f"Match {i} (Score: {m['score']:.4f}, Source: {m['source']}): {m['chunk']}")
