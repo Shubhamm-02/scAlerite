@@ -11,6 +11,7 @@ main.py – FastAPI Backend for scAlerite (with Gemini LLM)
 """
 
 import os
+import threading
 os.environ["OMP_NUM_THREADS"] = "1"
 
 from dotenv import load_dotenv
@@ -39,6 +40,7 @@ else:
 # ─────────────────────────────────
 app = FastAPI(title="scAlerite API", description="College academic chatbot backend")
 store = VectorStore()
+_store_ready = False   # set to True once PDFs are loaded
 
 
 class QueryRequest(BaseModel):
@@ -52,6 +54,12 @@ class QueryResponse(BaseModel):
 
 @app.on_event("startup")
 async def load_data():
+    """Start PDF loading in a background thread so the port opens instantly."""
+    threading.Thread(target=_load_pdfs, daemon=True).start()
+
+
+def _load_pdfs():
+    global _store_ready
     data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
     print(f"\n📂 Loading PDFs from: {data_dir}")
     chunk_dicts = process_directory(data_dir)
@@ -61,6 +69,7 @@ async def load_data():
         print(f"✅ Vector store ready with {len(chunk_dicts)} chunks.\n")
     else:
         print("⚠️ No chunks found. Add PDFs to the data/ folder.\n")
+    _store_ready = True
 
 
 # ─────────────────────────────────
@@ -140,6 +149,7 @@ async def query(request: QueryRequest):
 async def health():
     return {
         "status": "ok",
+        "ready": _store_ready,
         "chunks_loaded": len(store.chunks),
         "gemini_enabled": client is not None,
     }
