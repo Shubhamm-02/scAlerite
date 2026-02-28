@@ -17,7 +17,7 @@ import os
 import logging
 import httpx
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -25,6 +25,24 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
+# ─────────────────────────────────
+# Suggested Questions (Quick Buttons)
+# ─────────────────────────────────
+SUGGESTED_QUESTIONS = [
+    ["📅 When does the semester start?", "📜 What is the attendance policy?"],
+    ["🏢 How to book a meeting room?", "💰 What is the fee structure?"],
+    ["🏭 What is the industry immersion policy?", "📖 What is the curriculum?"],
+    ["🎓 What is the placement policy?", "🏠 What are the hostel rules?"],
+]
+
+def get_suggested_keyboard():
+    """Build the reply keyboard with suggested questions."""
+    return ReplyKeyboardMarkup(
+        SUGGESTED_QUESTIONS,
+        resize_keyboard=True,       # Shrink buttons to fit
+        one_time_keyboard=False,    # Keep keyboard visible
+    )
 
 # Load environment variables from .env file
 load_dotenv()
@@ -48,18 +66,16 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command."""
+    """Handle /start command — shows welcome + suggested question buttons."""
     welcome_message = (
         "👋 Welcome to *scAlerite* — your college academic assistant!\n\n"
-        "I can answer your questions about:\n"
-        "📅 Academic Calendar\n"
-        "📜 College Policies\n"
-        "📖 Curriculum Details\n"
-        "🏢 Meeting Room Booking\n"
-        "🏭 Industry Immersion\n\n"
-        "Just type your question and I'll find the answer from the official documents! 🔍"
+        "Tap any question below or type your own! 👇"
     )
-    await update.message.reply_text(welcome_message, parse_mode="Markdown")
+    await update.message.reply_text(
+        welcome_message,
+        parse_mode="Markdown",
+        reply_markup=get_suggested_keyboard(),
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
