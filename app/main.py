@@ -155,6 +155,21 @@ async def health():
     }
 
 
+@app.get("/debug")
+async def debug():
+    import glob
+    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    pdf_files = glob.glob(os.path.join(data_dir, "*.pdf"))
+    return {
+        "data_dir": data_dir,
+        "data_dir_exists": os.path.isdir(data_dir),
+        "pdf_count": len(pdf_files),
+        "pdf_files": [os.path.basename(f) for f in pdf_files],
+        "cwd": os.getcwd(),
+        "__file__": __file__,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
